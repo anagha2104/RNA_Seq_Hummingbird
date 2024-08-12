@@ -1,7 +1,7 @@
 
 # -------
 # remove libraries not needed
-
+library(clusterProfiler)
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
@@ -17,7 +17,8 @@ library(PCAtools)
 library(msigdbr)
 library(ggupset)
 library(AnnotationForge)
-
+library(AnnotationHub)
+library(UpSetR)
 
 # Read data in------------------
 res_Heart_ND <- read.csv(here("res_Heart_ND.csv"))
@@ -27,16 +28,42 @@ load(here("lists.RData"))
 
 # all genes and sig genes-----
 all_heart_genes <- norm_Heart %>% pull(gene)
+# -----
+annot = read.csv(file = "ZF_gonad_annGeneNames.csv")
+annot_2 = read.csv(file = "ZF_PTR_annGeneNames.csv")
 
-# right now focusing Heart ND only
+
+common_genes <- intersect(all_heart_genes,annot$Gene.Name)
+not_found <- setdiff(all_heart_genes,annot$Gene.Name)
+
+# lets see how much comes out of biomart
+ensembl <- useMart("ensembl")
+datasets <- listDatasets(ensembl)
+human <- useDataset("hsapiens_gene_ensembl", mart = ensembl)
+human_attr<- listAttributes(human)
+ensembl_anno <- getBM(attributes = c("external_gene_name",
+                                           'ensembl_gene_id',
+                                     "ensembl_transcript_id",
+                                     "transcript_is_canonical",
+                                     "ensembl_gene_id_version"),
+                            filters = 'external_gene_name',
+                            values = all_heart_genes,
+                            mart = human)
+
+ensembl_anno_ref <- ensembl_anno %>% 
+  filter(!is.na(ensembl_gene_id)) %>% 
+  select(-c(ensembl_gene_id_version,ensembl_transcript_id,transcript_is_canonical) ) %>% unique()
+  
+
+
+
+
+#  right now focusing Heart ND only--------
 
 
 
 # biomart----------
-ensembl <- useMart("ensembl")
 
-
-datasets <- listDatasets(ensembl)
 view(datasets)
 Arctic_ground_squ <- useDataset("uparryii_gene_ensembl", mart = ensembl)
 Arctic_ground_squ_attr<- listAttributes(Arctic_ground_squ)
@@ -108,7 +135,6 @@ gene_lists <- list(all_heart_genes_1,
                    all_heart_genes_10)
 
                    
-
 # making a list that can store results as I run the loop
 go_annotations_results <- list()
 # I had to loop 1:2,3:4 so on because it would not run otherwise.
@@ -513,6 +539,23 @@ ekeg <- enrichKEGG(
   universe=all_heart_genes,
   keyType = "kegg",
   pvalueCutoff = 0.1)
+
+# ----
+hub <- AnnotationHub()
+query(hub, c("clostridium","orgdb"))
+
+# enricher-----
+combined_df <- read.csv(here("annotated_heart_nd.csv"))
+combined_df_sig <- read.csv(here("annotated_heart_nd_sig.csv"))
+
+term2gene <- data.frame(combined_df$go_id ,combined_df$external_gene_name)
+goi <- combined_df_sig$external_gene_name
+x <- enricher(goi, TERM2GENE = term2gene)
+go_id_sig <- x$ID
+combined_df_sig[go_id == go_id_sig,]
+
+go_sig_info <- combined_df_sig %>% filter(go_id %in% go_id_sig ) %>%
+  select(-external_gene_name)%>%  unique()
 
 
 
